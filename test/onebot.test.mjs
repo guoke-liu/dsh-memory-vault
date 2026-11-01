@@ -1,7 +1,7 @@
 /**
  * lib/onebot.js 的单元测试。
  * 约束：全部使用注入的假 fetchImpl，不访问真实网络，不读真实 token。
- * 运行：cd /opt/dsh-plugins/dsh-memory-vault-v2 && node --test test/*.test.mjs
+ * 运行：在插件根目录执行 node --test test/*.test.mjs
  */
 
 import test from 'node:test';
