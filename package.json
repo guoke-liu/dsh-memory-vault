@@ -1,0 +1,56 @@
+{
+  "name": "dsh-memory-vault",
+  "version": "0.2.0",
+  "private": true,
+  "description": "记忆仓库：把私聊图片与文字描述存档，按内容去重、编号引用；三档存图模式（both/text/image）适配有无看图模型的用户；AI 可检索。",
+  "license": "MIT",
+  "type": "module",
+  "main": "lib/index.js",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "test": "node --test test/*.test.mjs"
+  },
+  "exports": {
+    ".": "./lib/index.js",
+    "./client": "./lib/client.js",
+    "./cordis.patch.yml": "./cordis.patch.yml",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "lib",
+    "cordis.patch.yml",
+    "README.md",
+    "LICENSE"
+  ],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "inject": [
+        "slots"
+      ]
+    },
+    "compatibility": {
+      "dshReleases": {
+        "0.2.1-rc.5": "compatible",
+        "0.2.0-rc.2": "compatible"
+      }
+    }
+  },
+  "keywords": [
+    "deepseek-harness",
+    "dsh-plugin",
+    "image",
+    "archive",
+    "dedupe",
+    "onebot"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/yourname/dsh-memory-vault.git"
+  }
+}

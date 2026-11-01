@@ -1,0 +1,20 @@
+# dsh-memory-vault bundle 装配清单。
+# 列进 profile 的 dsh.profile.bundles 后，boot 层按此清单插入插件。
+#
+# 全部 config 可选：
+#   库目录        档案库根目录，留空 = ~/.dsh/memory-vault
+#   onebotUrl     OneBot 11 HTTP 地址，例如 http://127.0.0.1:3000（留空 = 不启动收图）
+#   onebotToken   OneBot Access-Token（建议用环境变量 ONEBOT_TOKEN，别写进这里）
+#   ownerQq       只收这个 QQ 号的私聊图
+#   轮询秒        多久扫一轮私聊，默认 60，最小 10
+#
+# 存图模式（both / text / image）不在这里配 —— 它在设置页里改，
+# 存在 ~/.dsh/memory-vault/config.json，改完立即生效，不用重启。
+- insert:
+    - id: dsh-memory-vault
+      name: 'dsh-memory-vault'
+      config:
+        库目录: ''
+        onebotUrl: ''
+        ownerQq: ''
+        轮询秒: 60
