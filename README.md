@@ -1,5 +1,9 @@
 # dsh-memory-vault
 
+[![tests](https://github.com/guoke-liu/dsh-memory-vault/actions/workflows/tests.yml/badge.svg)](https://github.com/guoke-liu/dsh-memory-vault/actions/workflows/tests.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![version](https://img.shields.io/github/v/tag/guoke-liu/dsh-memory-vault)](https://github.com/guoke-liu/dsh-memory-vault/tags)
+
 给 DeepSeek Harness 用的**记忆仓库**：把私聊里的图存下来，同一张图只存一份，每张图有个编号；
 模型可以按关键词搜回来。
 
