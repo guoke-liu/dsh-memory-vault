@@ -1,0 +1,35 @@
+name: tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node: ['20', '22']
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+
+      - name: 跑测试
+        run: node --test test/*.test.mjs
+
+      - name: 检查插件能加载
+        run: |
+          node -e "
+          import('./lib/index.js').then(m => {
+            if (typeof m.apply !== 'function') throw new Error('index.js 没有导出 apply');
+            if (!m.inject || Array.isArray(m.inject)) throw new Error('inject 必须是对象映射');
+            console.log('✅ 插件入口正常, inject =', Object.keys(m.inject));
+          }).catch(e => { console.error('❌', e.message); process.exit(1); })
+          "
