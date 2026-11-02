@@ -229,6 +229,10 @@ curl -X POST http://127.0.0.1:6600/dsh-memory-vault/scan
 
 接口：`GET /dsh-memory-vault/update`（`?refresh=1` 绕过缓存）
 
+> ⚠️ **刚发版时可能慢半拍**：GitHub 的 raw CDN 有 `max-age=300`（5 分钟）缓存。
+> 你刚推完新版、立刻查更新，可能还显示旧版本号。等几分钟就会一致。
+> 这不是插件的问题，客户端没法绕过服务端缓存。
+
 ### 收图所需的 OneBot 配置
 
 在 profile 的 `cordis.patch.yml` 里：
