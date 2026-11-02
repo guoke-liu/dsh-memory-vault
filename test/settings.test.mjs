@@ -150,11 +150,14 @@ test('routes: 假 webServer 抓出 handler，GET settings 能拿到配置，POST
   };
   registerRoutes(ctx, { settings: s, log: () => {} });
 
-  assert.equal(regs.length, 2, '应注册 settings 与 stats 两条路由');
+  // 2026-11-02：新增 /scan（手动扫描）后是 3 条
+  assert.equal(regs.length, 3, '应注册 settings / stats / scan 三条路由');
   const settingsRoute = regs.find((r) => r.path === '/dsh-memory-vault/settings');
   const statsRoute = regs.find((r) => r.path === '/dsh-memory-vault/stats');
   assert.ok(settingsRoute, '应有 settings 路由');
   assert.ok(statsRoute, '应有 stats 路由');
+  const scanRoute = regs.find((r) => r.path === '/dsh-memory-vault/scan');
+  assert.ok(scanRoute, '应有 scan 路由（手动扫描）');
   assert.equal(settingsRoute.kind, 'exact', '必须用 kind:exact，不是 method');
 
   // 造一个假的 res 收响应（真实签名要求自己写 head + end）
