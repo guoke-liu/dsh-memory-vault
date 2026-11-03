@@ -137,3 +137,40 @@ test('分层库写成 600 权限', async () => {
   if (模式 !== 0o600) throw new Error(`分层库权限应为 600，实际 ${模式.toString(8)}`)
   console.log('  ✅ 分层库 600')
 })
+
+// ── 精简存储 + 按时间戳回查原文 ──────────────────────────────────
+test('分层库只存摘要，全文可按坐标回查', async () => {
+  const { mkdtempSync, mkdirSync, writeFileSync, readFileSync } = await import('node:fs')
+  const { tmpdir } = await import('node:os')
+  const { join } = await import('node:path')
+  const { 摘取摘要, 摘要上限, 回查原文, 读分层库, 展开条目 } = await import('../lib/recall-ingest.js')
+
+  // 摘要：短的原样留，长的头尾都留
+  const 短 = '很短的一句'
+  测('短内容原样保留', 摘取摘要(短) === 短)
+  const 长 = 'A'.repeat(200) + '关键结论在最后'
+  const 摘 = 摘取摘要(长)
+  测('长内容被截断', 摘.length <= 摘要上限 + 2, String(摘.length))
+  测('保留了结尾（结论常在最后）', 摘.includes('关键结论在最后'), 摘.slice(-20))
+
+  // 造一个聊天文件 + 分层库，验回查
+  const 根 = mkdtempSync(join(tmpdir(), 'lookup-'))
+  mkdirSync(join(根, 'chat', 'group', '730783833'), { recursive: true })
+  writeFileSync(join(根, 'chat', 'group', '730783833', '2026-11-04.txt'),
+    '[00:00:30] 小鱼(p1): ' + '很长的内容'.repeat(50) + '\n[00:01:00] 别人(p2): 第二句\n')
+
+  const r = await 回查原文(根, { 来源: 'group:730783833', 日期: '2026-11-04', 时间: '00:00:30' })
+  测('按时间戳回查成功', r.ok === true, r.错误)
+  测('拿到完整原文', r.命中[0].内容.length > 200, String(r.命中[0].内容.length))
+  测('带上昵称和 pid', r.命中[0].昵称 === '小鱼' && r.命中[0].pid === 'p1')
+
+  const r2 = await 回查原文(根, { 来源: 'group:730783833', 日期: '2026-11-04', 时间: '00:00:30' })
+  测('不存在的日期明确报错', (await 回查原文(根, { 来源: 'x', 日期: '1999-01-01', 时间: '00:00:00' })).ok === false)
+  测('缺坐标明确报错', (await 回查原文(根, {})).ok === false)
+
+  // 兼容：旧格式（条目平铺）与新格式（分组）都能读
+  const 旧 = { version: 1, 已处理: [], 条目: [{ 来源: 'private', 日期: 'd', 时间: 't', 内容: '旧格式正文', 层级: 1, 指纹: 'f' }] }
+  const 新 = { version: 1, 已处理: [], 分组: [{ 来源: 'private', 日期: 'd', 条目: [{ 时间: 't', 摘要: '新格式摘要', 层级: 1, 指纹: 'f' }] }] }
+  测('旧格式能展开', 展开条目(旧).length === 1 && 展开条目(旧)[0].内容 === '旧格式正文')
+  测('新格式能展开', 展开条目(新).length === 1 && 展开条目(新)[0].摘要 === '新格式摘要')
+})
