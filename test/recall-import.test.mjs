@@ -184,3 +184,43 @@ test('端到端：导入后 memory_recall 能检索到', async () => {
   const r2 = await imp.execute({ 文件: 源, 格式预设: 'dayone', 来源: 'dayone' })
   测('重复导入不新增', r2.新增 === 0 && r2.跳过 === 1, `新增 ${r2.新增} 跳过 ${r2.跳过}`)
 })
+
+// ── 「启用聊天分层」开关必须真的控制检索 ──────────────────────────
+// 踩过的同类问题：设置页的「启用群聊」名字和行为对不上（README 坑 2）。
+// 这里验同样的坑没在新开关上重犯。
+test('开关关着时不把聊天卷进检索', async () => {
+  const { 注册AI工具 } = await import('../lib/tools.js')
+  const { mkdirSync, writeFileSync } = await import('node:fs')
+  const 根 = mkdtempSync(path.join(tmpdir(), 'sw-'))
+  const 配置 = path.join(根, 'cfg')
+  mkdirSync(配置, { recursive: true })
+  // 造一个含聊天原文的分层库
+  writeFileSync(path.join(配置, 'chat-levels.json'), JSON.stringify({
+    version: 1, 已处理: [], 统计: {},
+    条目: [{ 来源: 'imported', 日期: '2026-11-03', 时间: '10:00:00', 昵称: 'a', pid: 'p1',
+      内容: '分组讨论奶茶配方', 层级: 2, 分: 20, 理由: '', 分层来源: 'rule', 指纹: 'x' }],
+  }))
+  // 造一条日记
+  const 日记根 = path.join(根, 'diary')
+  mkdirSync(path.join(日记根, 'entries', 'private'), { recursive: true })
+  writeFileSync(path.join(日记根, 'entries', 'private', '2026-11-03.json'), JSON.stringify({
+    version: 2, date: '2026-11-03', 来源: 'private',
+    entries: [{ id: 'd1', text: '今天的日记', tags: [], at: '2026-11-03T00:00:00Z' }],
+  }))
+
+  const 建 = (设置) => {
+    const 注册 = []
+    注册AI工具({
+      defineTool: (o) => o, ctx: { tools: { register: (t) => 注册.push(t) } },
+      rootDir: () => path.join(根, 'vault'), diaryRootDir: () => 日记根,
+      配置目录: 配置, 读设置: async () => 设置, log: () => {},
+    })
+    return 注册.find((t) => t.name === 'memory_recall')
+  }
+
+  const 关 = await 建({ 启用聊天分层: false }).execute({ query: '奶茶', 来源: '*' })
+  测('开关关：搜不到聊天内容', !String(关.text).includes('配方'), String(关.text).slice(0, 80))
+
+  const 开 = await 建({ 启用聊天分层: true }).execute({ query: '奶茶', 来源: '*' })
+  测('开关开：能搜到聊天内容', String(开.text).includes('配方'), String(开.text).slice(0, 80))
+})

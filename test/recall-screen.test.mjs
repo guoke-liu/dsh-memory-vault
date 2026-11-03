@@ -120,3 +120,20 @@ test('模型回答解析容错', () => {
   if (解析回答('我觉得都挺重要的') !== null) throw new Error('垃圾输入应返回 null')
   console.log('  ✅ 解析器四种形式 + 垃圾输入')
 })
+
+// ── 文件权限（含聊天原文，比密钥还敏感）──────────────────────────
+test('分层库写成 600 权限', async () => {
+  const { mkdtempSync: mkd, statSync: st } = await import('node:fs')
+  const { tmpdir: td } = await import('node:os')
+  const { join: j } = await import('node:path')
+  const 根 = mkd(j(td(), 'perm-level-'))
+  // 造最小聊天库
+  const { mkdirSync: mkm, writeFileSync: wf } = await import('node:fs')
+  mkm(j(根, 'chat', 'private'), { recursive: true })
+  wf(j(根, 'chat', 'private', '2026-11-03.txt'), '[10:00:00] a(p1): 说好了下周交版本，端口改成8080\n')
+  const 输出 = j(根, 'levels.json')
+  await 跑分层({ 仓库根: 根, 输出文件: 输出, 用模型: false })
+  const 模式 = st(输出).mode & 0o777
+  if (模式 !== 0o600) throw new Error(`分层库权限应为 600，实际 ${模式.toString(8)}`)
+  console.log('  ✅ 分层库 600')
+})
