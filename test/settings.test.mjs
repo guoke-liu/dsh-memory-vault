@@ -189,3 +189,51 @@ test('routes: 假 webServer 抓出 handler，GET settings 能拿到配置，POST
   await statsRoute.handler({ method: 'GET' }, res);
   assert.deepEqual(JSON.parse(res.get().body), { ok: true });
 });
+
+// ---------------- 私聊/群聊分开设档（2026-11-03） ----------------
+
+test('分档默认是空串：老配置读出来「跟随总开关」，行为不变', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'mv-split-'));
+  const s = createSettings({ configPath: join(dir, 'config.json') });
+  const cfg = await s.read();
+  assert.equal(cfg['私聊存图模式'], '');
+  assert.equal(cfg['群聊存图模式'], '');
+  assert.equal(cfg['存图模式'], 'both');
+});
+
+test('分档能单独设：私聊 text、群聊 image，互不影响也不动总开关', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'mv-split-'));
+  const s = createSettings({ configPath: join(dir, 'config.json') });
+  await s.write({ '存图模式': 'both', '私聊存图模式': 'text', '群聊存图模式': 'image' });
+  const cfg = await s.read();
+  assert.equal(cfg['私聊存图模式'], 'text');
+  assert.equal(cfg['群聊存图模式'], 'image');
+  assert.equal(cfg['存图模式'], 'both');
+});
+
+test('分档写回空串 = 重新跟随总开关', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'mv-split-'));
+  const s = createSettings({ configPath: join(dir, 'config.json') });
+  await s.write({ '私聊存图模式': 'text' });
+  assert.equal((await s.read())['私聊存图模式'], 'text');
+  await s.write({ '私聊存图模式': '' });
+  assert.equal((await s.read())['私聊存图模式'], '');
+});
+
+test('分档写非法值：忽略，保留当前值（不会被悄悄改成 both）', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'mv-split-'));
+  const s = createSettings({ configPath: join(dir, 'config.json') });
+  await s.write({ '群聊存图模式': 'text' });
+  await s.write({ '群聊存图模式': '随便瞎写' });
+  assert.equal((await s.read())['群聊存图模式'], 'text');
+});
+
+test('文件里的分档是脏值：读的时候回退空串（跟随），不是回退 both', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'mv-split-'));
+  const p = join(dir, 'config.json');
+  await writeFile(p, JSON.stringify({ version: 1, '存图模式': 'text', '群聊存图模式': 'nonsense' }), 'utf8');
+  const s = createSettings({ configPath: p });
+  const cfg = await s.read();
+  assert.equal(cfg['群聊存图模式'], '');
+  assert.equal(cfg['存图模式'], 'text');   // 总开关没被连累
+});
