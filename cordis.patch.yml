@@ -15,6 +15,7 @@
       name: 'dsh-memory-vault'
       config:
         库目录: ''
+        群号: ''
         onebotUrl: ''
         ownerQq: ''
         轮询秒: 60
