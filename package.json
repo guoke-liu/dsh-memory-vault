@@ -16,13 +16,16 @@
     ".": "./lib/index.js",
     "./client": "./lib/client.js",
     "./cordis.patch.yml": "./cordis.patch.yml",
-    "./package.json": "./package.json"
+    "./package.json": "./package.json",
+    "./recall-rank": "./lib/recall-rank.js",
+    "./recall-coverage": "./lib/recall-coverage.js"
   },
   "files": [
     "lib",
     "cordis.patch.yml",
     "README.md",
-    "LICENSE"
+    "LICENSE",
+    "data"
   ],
   "dsh": {
     "bundle": {

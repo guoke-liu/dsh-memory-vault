@@ -105,12 +105,15 @@ test('注册AI工具：没有 ctx.tools 时不抛错', () => {
   assert.ok(提示.includes('不可用'))
 })
 
-test('注册AI工具：注册六个工具（含 chat_search、person_list、import_memories），参数是属性映射格式', () => {
+test('注册AI工具：注册八个工具（含 chat_search、person_list、import_memories、memory_recall、memory_coverage），参数是属性映射格式', () => {
   const registered = []
   const ctx = { tools: { register: (t) => registered.push(t) } }
   const defineTool = (o) => o
   const r = 注册AI工具({ defineTool, ctx, rootDir: () => '/tmp', log: () => {} })
-  assert.deepEqual(r.sort(), ['chat_search', 'import_memories', 'memory_get', 'memory_recent', 'memory_search', 'person_list'])
+  // 2026-11-03：并入记忆检索（memory_recall / memory_coverage）后从 6 个变 8 个。
+  // 这两个工具每次调用都动态 import recall-tools.js，注册阶段不加载，
+  // 所以这里即使不传 diaryRootDir 也应当注册成功 —— 没配日记库是降级，不是不注册。
+  assert.deepEqual(r.sort(), ['chat_search', 'import_memories', 'memory_coverage', 'memory_get', 'memory_recall', 'memory_recent', 'memory_search', 'person_list'])
   const s = registered.find((t) => t.name === 'memory_search')
   assert.ok(s.parameters.query, 'query 必须是属性映射里的一项')
   assert.equal(s.parameters.query.required, true)
