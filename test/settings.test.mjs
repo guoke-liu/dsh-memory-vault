@@ -237,3 +237,38 @@ test('文件里的分档是脏值：读的时候回退空串（跟随），不�
   assert.equal(cfg['群聊存图模式'], '');
   assert.equal(cfg['存图模式'], 'text');   // 总开关没被连累
 });
+
+// ── 密钥脱敏与文件权限（安全相关，必须有测试）────────────────────────
+// 追加到已有 import
+import { 脱敏配置 } from '../lib/settings.js'
+import { mkdtempSync, statSync, readFileSync } from 'node:fs'
+import { join as joinP } from 'node:path'
+
+test('脱敏配置：密钥变成 ***，其余字段不动', () => {
+  const 脱 = 脱敏配置({ 模型密钥: 'sk-真值', 模型名称: 'x', 存图模式: 'both' })
+  assert.equal(脱['模型密钥'], '***', '密钥必须脱敏')
+  assert.equal(脱['模型名称'], 'x', '其他字段不能动')
+  assert.equal(脱['存图模式'], 'both')
+})
+
+test('脱敏配置：空密钥保持空串（区分「没设」和「设了但不显示」）', () => {
+  assert.equal(脱敏配置({ 模型密钥: '' })['模型密钥'], '')
+  assert.equal(脱敏配置({})['模型密钥'], '')
+})
+
+test('脱敏后的值里不含真 key 任何片段', () => {
+  const 真 = 'sk-abcdef123456789'
+  const 脱 = 脱敏配置({ 模型密钥: 真 })
+  assert.ok(!JSON.stringify(脱).includes('abcdef'), '响应里不能出现真 key 的任何部分')
+})
+
+test('config.json 写成 600 权限', async () => {
+  const 目录 = mkdtempSync(joinP(tmpdir(), 'perm-'))
+  const 文件 = joinP(目录, 'config.json')
+  const s = createSettings({ configPath: 文件 })
+  await s.write({ 模型密钥: 'sk-test' })
+  const 模式 = statSync(文件).mode & 0o777
+  assert.equal(模式, 0o600, `配置文件权限应为 600，实际 ${模式.toString(8)}`)
+  // 真值确实写进去了（脱敏只影响接口，不影响落盘）
+  assert.ok(readFileSync(文件, 'utf8').includes('sk-test'))
+})
