@@ -15,7 +15,7 @@
  */
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtempSync, rmSync, mkdirSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, rmSync, mkdirSync, writeFileSync, readFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -381,4 +381,207 @@ test('只给人：那人说话在很早的位置也翻得到（不能只读最�
 
   const r = await 跑检索({ args: { 人: '南瓜', 来源: 'group' }, ...公共(根) })
   assert.ok(r.text.includes('我最后一句'), `900 行之外的那句也该翻到，实际：${r.text}`)
+})
+
+// ============================================================================
+// 第三轮（2026-11-04）：主人说「不行」，因为修的全是**参数**，没修**模型怎么传参数**
+//
+// 实测云端：模型最自然的做法是把整句扔进 query ——
+//   memory_recall { query: "南瓜鸡昨晚最后一句说的什么" }
+// 这条路上事件层拿整串去子串匹配，0 命中，然后直接返回。
+// 所以补三层：① 从整句拆出人/日期/模式 ② 事件层空了往下走 ③ 结果必须交代筛了什么
+// ============================================================================
+
+import { 拆询问 } from '../lib/recall-tools.js'
+
+const 基准 = new Date('2026-11-04T09:00:00+08:00')
+
+test('拆询问：整句「XX昨晚最后一句说的什么」拆成人+日期+要最近', () => {
+  const r = 拆询问('南瓜鸡昨晚最后一句说的什么', 基准)
+  assert.equal(r.人, '南瓜鸡')
+  assert.equal(r.起, '2026-11-03', '「昨晚」要算成前一天')
+  assert.equal(r.止, '2026-11-03')
+  assert.equal(r.只看最近, true)
+  assert.equal(r.剩余, '', '问句骨架不该留在关键词里')
+})
+
+test('拆询问：「搜群主…」开头有检索动词也能拆', () => {
+  const r = 拆询问('搜群主昨天晚上最后一句说话的啥', 基准)
+  assert.equal(r.人, '群主')
+  assert.equal(r.起, '2026-11-03')
+  assert.equal(r.只看最近, true)
+})
+
+test('拆询问：「早起说」这种不算问时间', () => {
+  // 正则不能把「说」前面的「起」吃掉
+  const r = 拆询问('南瓜鸡昨天说我们起晚了', 基准)
+  assert.equal(r.人, '南瓜鸡')
+  assert.equal(r.只看最近, false)
+})
+
+test('拆询问：纯主题不拆出人（关于画图那事怎么定的）', () => {
+  const r = 拆询问('关于画图那事怎么定的', 基准)
+  assert.equal(r.人, '')
+  assert.equal(r.只看最近, false)
+  assert.ok(r.剩余.length > 0, '关键词要留着')
+})
+
+test('拆询问：明确写出的日期也认', () => {
+  const r = 拆询问('2026-11-03 最后 3 句', 基准)
+  assert.equal(r.起, '2026-11-03')
+  assert.equal(r.止, '2026-11-03')
+  assert.equal(r.要几条, 3)
+})
+
+test('拆询问：认不出就原样返回，不把句子吃掉', () => {
+  const r = 拆询问('天气怎么样', 基准)
+  assert.equal(r.人, '')
+  assert.equal(r.剩余, '天气怎么样')
+})
+
+// ── 整句 query 真的能答对 ───────────────────────────────────────────
+
+test('整句 query（模型最自然的调用）能答对：南瓜鸡昨晚最后一句', async (t) => {
+  const 根 = mkdtempSync(join(tmpdir(), 'mv-nlq-'))
+  t.after(() => rmSync(根, { recursive: true, force: true }))
+  const 群 = join(根, 'chat', 'group', '730783833')
+  mkdirSync(群, { recursive: true })
+  // 数据要写在「昨天」那天，这样 拆询问 算出来的相对日期才对得上。
+  // ⚠️ 先算好日期再写文件 —— 一开始写成「先写 11-03 再读出来改名」，
+  // 结果改名那步把源文件读空了，测试自己造了个空仓库。
+  const 昨天 = new Date(Date.now() - 86400000)
+  const 昨串 = `${昨天.getFullYear()}-${String(昨天.getMonth() + 1).padStart(2, '0')}-${String(昨天.getDate()).padStart(2, '0')}`
+  writeFileSync(join(群, `${昨串}.txt`),
+    '[09:00:00] 小鱼儿(p1): 早上好\n'
+    + '[16:33:40] 南瓜鸡(p6): 这句才是我说的\n'
+    + '[23:59:42] 龙娘(p83): 别人最后一句\n')
+
+  const { 跑检索 } = await import('../lib/recall-tools.js')
+  // 注意：不传 人、不传 起止、不传 按时间 —— 全部要从 query 里拆
+
+  const r = await 跑检索({
+    args: { query: '南瓜鸡昨晚最后一句说的什么', 来源: 'group:730783833' },
+    ...公共(根),
+  })
+  assert.ok(r.text.includes('这句才是我说的'), `该答出南瓜鸡那句，实际：${r.text}`)
+  assert.ok(!r.text.includes('别人最后一句'), '不能返回别人的话')
+  assert.match(r.text, /从提问里识别出/, '要告诉用户识别出了什么')
+})
+
+// ── 事件层 0 命中要往下走 ───────────────────────────────────────────
+
+test('事件层 0 命中不再直接返回，落到原文检索', async (t) => {
+  const 根 = mkdtempSync(join(tmpdir(), 'mv-fall-'))
+  t.after(() => rmSync(根, { recursive: true, force: true }))
+  const 群 = join(根, 'chat', 'group', '730783833')
+  mkdirSync(群, { recursive: true })
+  writeFileSync(join(群, '2026-11-03.txt'), '[16:33:40] 南瓜鸡(p6): 原文里的答案\n')
+
+  const { 写事件库 } = await import('../lib/recall-events-store.js')
+  const 事件文件 = join(根, 'events.json')
+  await 写事件库(事件文件, {
+    事件们: [{ 事件: '无关的事', 日期: '2026-11-03', 起: '10:00', 结果: '别的', 参与人: ['甲'], 提炼方式: '话题', 来源: 'group:730783833' }],
+    统计: {},
+  })
+
+  const { 跑检索 } = await import('../lib/recall-tools.js')
+  const r = await 跑检索({
+    args: { query: '原文里的', 来源: 'group:730783833' },
+    日记根: '', 仓库根: 根, 分层库文件: '', 导入目录: '', 事件库文件: 事件文件, 说: () => {},
+  })
+  assert.ok(r.text.includes('原文里的答案'), `事件层空了该落到原文，实际：${r.text}`)
+})
+
+test('事件层命中时仍然是它先答（不能被原文抢走）', async (t) => {
+  const 根 = mkdtempSync(join(tmpdir(), 'mv-ev-'))
+  t.after(() => rmSync(根, { recursive: true, force: true }))
+  mkdirSync(join(根, 'chat', 'group', '730783833'), { recursive: true })
+  writeFileSync(join(根, 'chat', 'group', '730783833', '2026-11-03.txt'), '[16:33:40] 甲(p1): 原文\n')
+
+  const { 写事件库 } = await import('../lib/recall-events-store.js')
+  const 事件文件 = join(根, 'events.json')
+  await 写事件库(事件文件, {
+    事件们: [{ 事件: '修 nginx', 日期: '2026-11-03', 起: '16:00', 结果: '修好了', 参与人: ['甲'], 提炼方式: '话题', 来源: 'group:730783833' }],
+    统计: {},
+  })
+  const { 跑检索 } = await import('../lib/recall-tools.js')
+  const r = await 跑检索({
+    args: { query: 'nginx', 来源: 'group:730783833' },
+    日记根: '', 仓库根: 根, 分层库文件: '', 导入目录: '', 事件库文件: 事件文件, 说: () => {},
+  })
+  assert.ok(r.text.includes('【修 nginx】'), `事件命中时要走事件层，实际：${r.text}`)
+})
+
+// ── 条件不许被静默吞掉 ─────────────────────────────────────────────
+
+test('按时间 + 人 + 事件库：人必须生效，不能被事件层接走', async (t) => {
+  const 根 = mkdtempSync(join(tmpdir(), 'mv-silent-'))
+  t.after(() => rmSync(根, { recursive: true, force: true }))
+  const 群 = join(根, 'chat', 'group', '730783833')
+  mkdirSync(群, { recursive: true })
+  writeFileSync(join(群, '2026-11-03.txt'),
+    '[09:00:00] 小鱼儿(p1): 我要的这句\n'
+    + '[23:59:42] 龙娘(p83): 别人的话\n')
+  const { 写事件库 } = await import('../lib/recall-events-store.js')
+  const 事件文件 = join(根, 'events.json')
+  await 写事件库(事件文件, {
+    事件们: [{ 事件: '无关', 日期: '2026-11-03', 起: '10:00', 结果: 'x', 参与人: ['小鱼儿'], 提炼方式: '话题', 来源: 'group:730783833' }],
+    统计: {},
+  })
+  const { 跑检索 } = await import('../lib/recall-tools.js')
+  const r = await 跑检索({
+    args: { 人: '小鱼儿', 来源: 'group:730783833', 止: '2026-11-03', 按时间: true, limit: 3 },
+    日记根: '', 仓库根: 根, 分层库文件: '', 导入目录: '', 事件库文件: 事件文件, 说: () => {},
+  })
+  assert.ok(r.text.includes('我要的这句'), `人这个条件被吞了，实际：${r.text}`)
+  assert.ok(!r.text.includes('别人的话'), '不该返回别人的话')
+})
+
+test('按时间 + 人：结果里必须写清筛了多少条', async (t) => {
+  const 根 = mkdtempSync(join(tmpdir(), 'mv-trace-'))
+  t.after(() => rmSync(根, { recursive: true, force: true }))
+  const 群 = join(根, 'chat', 'group', '730783833')
+  mkdirSync(群, { recursive: true })
+  writeFileSync(join(群, '2026-11-03.txt'),
+    '[09:00:00] 小鱼儿(p1): 一\n[10:00:00] 小鱼儿(p1): 二\n[23:00:00] 龙娘(p83): 三\n')
+  const { 跑检索 } = await import('../lib/recall-tools.js')
+  const r = await 跑检索({
+    args: { 人: '小鱼儿', 来源: 'group:730783833', 止: '2026-11-03', 按时间: true, limit: 3 },
+    ...公共(根),
+  })
+  // ⚠️ 以前断言的是「这个时间段共 N 条，筛后 M 条」——
+  // 那个数字是拿两次各自被上限截断的调用相减算出来的，云端真数据下出现过
+  // 「共 200 条，筛后 0 条」而下面明明列着 6 条。所以改成只报实际返回条数。
+  assert.match(r.text, /条件：人=小鱼儿（返回 2 条/, `实际：${r.text}`)
+})
+
+test('按时间 + query 只有一个人名：也当人筛，不退化成「所有人的话」', async (t) => {
+  const 根 = mkdtempSync(join(tmpdir(), 'mv-bare-'))
+  t.after(() => rmSync(根, { recursive: true, force: true }))
+  const 群 = join(根, 'chat', 'group', '730783833')
+  mkdirSync(群, { recursive: true })
+  writeFileSync(join(群, '2026-11-03.txt'),
+    '[09:00:00] 小鱼儿(p1): 我的\n[23:00:00] 龙娘(p83): 别人的\n')
+  const { 跑检索 } = await import('../lib/recall-tools.js')
+  const r = await 跑检索({
+    args: { query: '小鱼儿', 来源: 'group:730783833', 止: '2026-11-03', 按时间: true, limit: 3 },
+    ...公共(根),
+  })
+  assert.ok(r.text.includes('我的'), `实际：${r.text}`)
+  assert.ok(!r.text.includes('别人的'), `人名要当人筛，实际：${r.text}`)
+})
+
+test('按时间查：人不存在时列出当时说过话的人', async (t) => {
+  const 根 = mkdtempSync(join(tmpdir(), 'mv-miss-'))
+  t.after(() => rmSync(根, { recursive: true, force: true }))
+  const 群 = join(根, 'chat', 'group', '730783833')
+  mkdirSync(群, { recursive: true })
+  writeFileSync(join(群, '2026-11-03.txt'), '[09:00:00] 小鱼儿(p1): 你好\n')
+  const { 跑检索 } = await import('../lib/recall-tools.js')
+  const r = await 跑检索({
+    args: { query: '查无此人', 来源: 'group:730783833', 止: '2026-11-03', 按时间: true, limit: 3 },
+    ...公共(根),
+  })
+  assert.equal(r.命中数, 0)
+  assert.match(r.text, /说过话的人：小鱼儿/)
 })
