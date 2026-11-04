@@ -24,7 +24,7 @@ import assert from 'node:assert/strict'
 import { 注册AI工具, 包成文本块 } from '../lib/tools.js'
 
 /** 后 4 个：渲染方式是把 value.text 整段交出去 */
-const 整段文字工具 = ['memory_recall', 'memory_coverage', 'memory_import_diary', 'memory_score_chats', 'memory_build_events', 'memory_forget_events']
+const 整段文字工具 = ['memory_recall', 'memory_coverage', 'memory_import_diary', 'memory_score_chats', 'memory_build_events', 'memory_forget_events', 'memory_impressions']
 
 /**
  * 按宿主的真实调用方式来造工具表。
@@ -67,7 +67,7 @@ function 取文字 (块) {
 
 test('全部工具都写了 render，且签名是 (args, value)', () => {
   const 工具们 = 造工具()
-  assert.equal(工具们.length, 12, '应该有 12 个工具（v1.5.3 加了 memory_build_events 和 memory_forget_events）')
+  assert.equal(工具们.length, 13, '应该有 13 个工具（v1.5.3 加了 build_events / forget_events / impressions）')
 
   for (const t of 工具们) {
     assert.ok(t.output, `${t.name} 缺 output`)
