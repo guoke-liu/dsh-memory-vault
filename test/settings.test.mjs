@@ -150,14 +150,19 @@ test('routes: 假 webServer 抓出 handler，GET settings 能拿到配置，POST
   };
   registerRoutes(ctx, { settings: s, log: () => {} });
 
-  // 2026-11-02：新增 /scan（手动扫描）后是 3 条
-  assert.equal(regs.length, 3, '应注册 settings / stats / scan 三条路由');
+  // 2026-11-04：新增 /feed（投喂账本，只读）后是 4 条。
+  //
+  // 这条断言故意写死数字：路由增减必须有人明确改这里，而不是悄悄通过。
+  // 多一条没人知道的路由 = 多一个没被审查过的对外接口。
+  assert.equal(regs.length, 4, '应注册 settings / stats / scan / feed 四条路由');
   const settingsRoute = regs.find((r) => r.path === '/dsh-memory-vault/settings');
   const statsRoute = regs.find((r) => r.path === '/dsh-memory-vault/stats');
   assert.ok(settingsRoute, '应有 settings 路由');
   assert.ok(statsRoute, '应有 stats 路由');
   const scanRoute = regs.find((r) => r.path === '/dsh-memory-vault/scan');
   assert.ok(scanRoute, '应有 scan 路由（手动扫描）');
+  const feedRoute = regs.find((r) => r.path === '/dsh-memory-vault/feed');
+  assert.ok(feedRoute, '应有 feed 路由（读投喂账本）');
   assert.equal(settingsRoute.kind, 'exact', '必须用 kind:exact，不是 method');
 
   // 造一个假的 res 收响应（真实签名要求自己写 head + end）
@@ -271,4 +276,35 @@ test('config.json 写成 600 权限', async () => {
   assert.equal(模式, 0o600, `配置文件权限应为 600，实际 ${模式.toString(8)}`)
   // 真值确实写进去了（脱敏只影响接口，不影响落盘）
   assert.ok(readFileSync(文件, 'utf8').includes('sk-test'))
+})
+
+// ── 三处同步（默认值 / 可写清单 / 读取）──────────────────────────────
+//
+// 实测踩过两次：字段在 DEFAULTS 和 WRITABLE_KEYS 里都有，但 sanitize() 里漏了，
+// 结果「写得进去、读不出来」：
+//   · 「首次回填」关掉后重启读到 true → 又多跑一遍历史回填
+//   · 「事件提炼档位」同理，会静默落回默认档
+// 这条测试把三处的一致性固定下来 —— 以后加字段漏哪一处都会红。
+
+test('所有 DEFAULTS 里的键，都要能被 read() 读出来', async () => {
+  const { readFileSync } = await import('node:fs')
+  const src = readFileSync(new URL('../lib/settings.js', import.meta.url), 'utf8')
+  // 从源码里抓 DEFAULTS 的键（它是模块内常量，没有导出）
+  const 起 = src.indexOf('const DEFAULTS')
+  const 段 = src.slice(起, src.indexOf('});', 起))
+  const keys = [...段.matchAll(/^\s+'?([^':\s]+)'?:\s/gm)].map((m) => m[1]).filter((k) => k !== 'version')
+  assert.ok(keys.length > 20, `没抓到默认值键，抓到 ${keys.length} 个`)
+
+  const s = createSettings({ configPath: await tempConfigPath() })
+  const cfg = await s.read()
+  const 缺失 = keys.filter((k) => !Object.hasOwn(cfg, k))
+  assert.deepEqual(缺失, [], `这些键有默认值但读不出来：${缺失.join('、')}`)
+})
+
+test('首次回填 / 回填条数：能写进去，也能读回来', async () => {
+  const s = createSettings({ configPath: await tempConfigPath() })
+  await s.write({ 首次回填: false, 回填条数: 1234 })
+  const cfg = await s.read()
+  assert.equal(cfg.首次回填, false, '关掉后必须读到 false，否则重启又会回填一遍')
+  assert.equal(cfg.回填条数, 1234)
 })

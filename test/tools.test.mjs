@@ -105,15 +105,16 @@ test('注册AI工具：没有 ctx.tools 时不抛错', () => {
   assert.ok(提示.includes('不可用'))
 })
 
-test('注册AI工具：注册十个工具（含 chat_search、person_list、import_memories、memory_recall、memory_coverage、memory_score_chats、memory_import_diary），参数是属性映射格式', () => {
+test('注册AI工具：注册十二个工具（含 chat_search、person_list、import_memories、memory_recall、memory_coverage、memory_score_chats、memory_import_diary、memory_build_events、memory_forget_events），参数是属性映射格式', () => {
   const registered = []
   const ctx = { tools: { register: (t) => registered.push(t) } }
   const defineTool = (o) => o
   const r = 注册AI工具({ defineTool, ctx, rootDir: () => '/tmp', log: () => {} })
-  // 2026-11-03：并入记忆检索后 6 → 8 个；加聊天分层 → 9 个；加外部日记导入 → 10 个。
-  // 这三个工具都是调用时才动态 import 实现模块，注册阶段不加载任何重依赖，
+  // 2026-11-03：并入记忆检索后 6 → 8 个；加聊天分层 → 9 个；加外部日记导入 → 10 个；
+  // 2026-11-04 加事件提炼 memory_build_events → 11 个。
+  // 这些都是调用时才动态 import 实现模块，注册阶段不加载任何重依赖，
   // 所以这里即使不传 diaryRootDir 也应当注册成功 —— 没配是降级，不是不注册。
-  assert.deepEqual(r.sort(), ['chat_search', 'import_memories', 'memory_coverage', 'memory_get', 'memory_import_diary', 'memory_recall', 'memory_recent', 'memory_score_chats', 'memory_search', 'person_list'])
+  assert.deepEqual(r.sort(), ['chat_search', 'import_memories', 'memory_build_events', 'memory_coverage', 'memory_forget_events', 'memory_get', 'memory_import_diary', 'memory_recall', 'memory_recent', 'memory_score_chats', 'memory_search', 'person_list'])
   const s = registered.find((t) => t.name === 'memory_search')
   assert.ok(s.parameters.query, 'query 必须是属性映射里的一项')
   assert.equal(s.parameters.query.required, true)
