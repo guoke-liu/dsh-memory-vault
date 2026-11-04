@@ -278,3 +278,40 @@ test('每个工具的 schema 都声明了 additionalProperties: false（漏了�
     assert.equal(s.type, 'object', `${t.name} 的 schema 根节点应该是 object`)
   }
 })
+
+// ── 2026-11-04 第二轮：群里报的 memory_coverage 炸了 ──────────────────────
+//
+// 鱼发来的原话：
+//   tool "memory_coverage" returned invalid output: "value.text" is not a
+//   declared property (additionalProperties: false)
+//
+// 和 memory_recall 那次是同一个病根，但**分散在 6 个工具里**：
+// 跑覆盖率() 的两条返回路径都带 text，import/build_events/impressions/
+// forget_events/score_chats 的执行体也都带，而 schema 一个都没声明。
+//
+// 为什么上一轮加的用例没挡住：那两条是**逐个手写样本**的，只钉住了
+// memory_recall 和 chat_search 两个。新加工具、或者给老工具加字段时，
+// 不会有人记得回来再手写一条。所以改成**遍历全部工具**。
+test('【全量】凡是 render 读 value.text 的工具，schema 都必须声明 text', () => {
+  for (const t of 造工具()) {
+    const 读text = t.output.render.toString().includes('value.text')
+    if (!读text) continue
+    const 声明 = Object.keys(t.output.schema?.properties || {})
+    assert.ok(声明.includes('text'),
+      `${t.name} 的 render 读 value.text，但 schema 没声明 text —— 每次调用都会判 INVALID_TOOL_OUTPUT`)
+  }
+})
+
+test('【全量】整段文字工具的真实返回必须过得了自己的 schema', () => {
+  // 这些工具执行体都是「成功/失败都带 text」，按最全的形状造值：
+  // 用 schema 造结构 + 强制塞一个 text，模拟真实返回。
+  const 工具表 = 造工具()
+  for (const 名 of 整段文字工具) {
+    const t = 工具表.find((x) => x.name === 名)
+    assert.ok(t, `找不到工具 ${名}`)
+    const 样本 = 按schema造值(t.output.schema)
+    样本.text = '一段人读文本'
+    const 错 = 校验(冻结(样本), t.output.schema)
+    assert.deepEqual(错, [], `${名} 的输出和 schema 对不上：\n${错.join('\n')}`)
+  }
+})
