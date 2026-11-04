@@ -105,9 +105,47 @@ memory_recall { query: "南瓜鸡昨晚最后一句说的什么" }
 - 结果里的「共 N 条，筛后 M 条」是拿两次各自被 200 条上限截断的调用相减算的，
   云端出现过「共 200 条，筛后 0 条」而下面明明列着 6 条 —— 这个数字本身没有意义，改成人话
 
+### 补充二（同日，群里「这回检索彻底坏了，换了几个词全是报错」）
+
+这一轮是我自己弄坏的，而且是**最坏的那种坏法**。
+
+上一轮往 `memory_recall` 的返回值里加了 `text`、往 `chat_search` 的每条结果里加了 `昵称`，
+但 `output.schema` 里没声明 —— 而 schema 写的是 `additionalProperties: false`。
+宿主校验不过，直接判 `INVALID_TOOL_OUTPUT`：
+
+```text
+Error: tool "chat_search" returned invalid output:
+       "value.结果[0].昵称" is not a declared property (additionalProperties: false)
+```
+
+不是偶尔失败，是**这两个工具每一次调用都失败**。模型只能回一句「工具报错」。
+
+> 和 §「render 写成单参数」是同一类问题的两个面：那次是返回值拿不到，
+> 这次是返回值被拒收。共同点都是 —— **工具调用链的最后一步从来没被验证过**。
+
+补的两件事：
+
+```text
+text  声明进 memory_recall 的 schema
+昵称  声明进 chat_search 的 schema.items
+```
+
+以及一个真正的测试（`tool-render.test.mjs`）：
+
+```text
+memory_recall 的返回值必须过得了它自己的 schema
+chat_search   的返回值必须过得了它自己的 schema
+```
+
+用真实失败形状的返回值喂进去，按宿主规则做一次校验。
+**验证过它抓得住**：把两处声明删掉再跑，这两条立刻变红。
+
+还顺手用同样方式跑了 `memory_search` / `memory_get` / `memory_recent` /
+`person_list` 四个只读工具，返回值都能过自己的 schema。
+
 ### 测试
 
-413 → 462 条。
+413 → 465 条。
 
 ```text
 拆人名 / 认身份 / 昵称对得上            9 条

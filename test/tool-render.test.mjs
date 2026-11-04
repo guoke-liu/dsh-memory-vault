@@ -196,3 +196,85 @@ test('包成文本块：null / undefined / 数字都要变成字符串，不能�
     assert.equal(typeof 块[0].text, 'string', `包成文本块(${String(值)}) 的 text 不是字符串`)
   }
 })
+
+// ============================================================================
+// 输出契约第二环：**返回值和 output.schema 必须对得上**
+//
+// 背景（2026-11-04，群里"这回检索彻底坏了，换了几个词全是报错"）：
+//
+// 我往 memory_recall 和 chat_search 的返回值里加了字段（text / 昵称），
+// 但 output.schema 里没声明，而 schema 是 `additionalProperties: false`。
+// 宿主校验时直接判 INVALID_TOOL_OUTPUT：
+//
+//   Error: tool "chat_search" returned invalid output:
+//          "value.结果[0].昵称" is not a declared property
+//
+// 不是某一处出错，是**这两个工具每一次调用都失败** —— 比返回空更坏，
+// 因为模型拿到的是 "Error"，只能回一句"工具报错"。
+//
+// 上一轮只测了 render 的**签名和返回类型**，没测「返回值能不能过 schema」
+// 这一环。这个用例补上：按宿主的规则做一次真校验。
+// ============================================================================
+
+/**
+ * 复刻宿主对工具返回值的校验：`additionalProperties: false` 时，
+ * 任何没在 properties 里声明的字段都算错（数组元素逐项校验）。
+ *
+ * 只实现本插件用到的子集就够了：object / array / string / number / boolean。
+ * 不去引第三方 JSON Schema 库 —— 开源版要保持零依赖。
+ */
+function 校验 (值, schema, 路径 = 'value') {
+  const 错 = []
+  if (!schema) return 错
+
+  if (schema.type === 'object') {
+    if (值 === null || typeof 值 !== 'object' || Array.isArray(值)) {
+      return [`${路径} 应该是 object`]
+    }
+    const 声明 = Object.keys(schema.properties || {})
+    for (const k of 声明) if (k in 值) 错.push(...校验(值[k], schema.properties[k], `${路径}.${k}`))
+    if (schema.additionalProperties === false) {
+      for (const k of Object.keys(值)) {
+        if (!声明.includes(k)) 错.push(`"${路径}.${k}" is not a declared property (additionalProperties: false)`)
+      }
+    }
+    return 错
+  }
+
+  if (schema.type === 'array') {
+    if (!Array.isArray(值)) return [`${路径} 应该是 array`]
+    值.forEach((v, i) => 错.push(...校验(v, schema.items, `${路径}[${i}]`)))
+    return 错
+  }
+
+  if (schema.type === 'string' && typeof 值 !== 'string') 错.push(`${路径} 应该是 string`)
+  if (schema.type === 'number' && typeof 值 !== 'number') 错.push(`${路径} 应该是 number`)
+  if (schema.type === 'boolean' && typeof 值 !== 'boolean') 错.push(`${路径} 应该是 boolean`)
+  return 错
+}
+
+test('memory_recall 的返回值必须过得了它自己的 schema（text 没声明就炸）', () => {
+  const t = 造工具().find((x) => x.name === 'memory_recall')
+  // 真实形状：跑检索 的返回值就是这样
+  const 真实返回 = { 找到: true, 命中数: 3, 下钻过: false, 下钻原因: '', 原文数: 0, text: '按时间倒序……' }
+  const 错 = 校验(冻结(真实返回), t.output.schema)
+  assert.deepEqual(错, [], `memory_recall 的输出和 schema 对不上：\n${错.join('\n')}`)
+})
+
+test('chat_search 的返回值必须过得了它自己的 schema（昵称没声明就炸）', () => {
+  const t = 造工具().find((x) => x.name === 'chat_search')
+  const 真实返回 = {
+    命中数: 1,
+    结果: [{ 日期: '2026-11-03', 类型: '群聊', 群号: '730783833', 昵称: '南瓜鸡', 内容: '[16:33:40] 南瓜鸡(p6): 官方的话' }],
+  }
+  const 错 = 校验(冻结(真实返回), t.output.schema)
+  assert.deepEqual(错, [], `chat_search 的输出和 schema 对不上：\n${错.join('\n')}`)
+})
+
+test('每个工具的 schema 都声明了 additionalProperties: false（漏了就等于没约束）', () => {
+  for (const t of 造工具()) {
+    const s = t.output.schema
+    if (!s) continue
+    assert.equal(s.type, 'object', `${t.name} 的 schema 根节点应该是 object`)
+  }
+})
