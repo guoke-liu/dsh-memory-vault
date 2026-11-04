@@ -180,3 +180,205 @@ test('按时间查要跳过事件层（事件层没有「最后一句」概念�
   assert.ok(r.text.includes('灰灰最后一句'), '该返回原文最后一句')
   assert.ok(!r.text.includes('事件库'), '不该被事件层截走')
 })
+
+// ============================================================================
+// 第二张截图（2026-11-04）：鱼说「我没找到，用『养鱼』搜也搜不出他昨晚最后那句」
+//
+// 问题不是「最后一句」，前半截才是断的：说话的记录里，同一个号一天能改八次名，
+// 用户在群里看到的是「南瓜鸡」，存档里写的是别的名字。
+// 还有「群主」「管理员」—— 那从来不是任何人的昵称，数据里根本没有身份字段。
+// ============================================================================
+
+import { 拆人名, 认身份, 昵称对得上 } from '../lib/recall-tools.js'
+
+test('拆人名：普通昵称切成可匹配的碎片', () => {
+  const r = 拆人名('南瓜鸡')
+  assert.equal(r.称谓, '')
+  assert.deepEqual(r.词们, ['南瓜鸡', '南瓜', '瓜鸡'])
+})
+
+test('拆人名：太长的昵称也不会把整串当唯一关键词', () => {
+  // 实测过 4 字上限：昵称「负债な九尾天狐」取到的是「负债な九」，
+  // 拿这个去 includes 永远匹配不上它自己。所以要能退化到片段。
+  const r = 拆人名('负债な九尾天狐')
+  assert.ok(r.词们.length > 0)
+  assert.ok(昵称对得上('负债な九尾天狐', r.词们))
+})
+
+test('拆人名：「群主」「管理员」被认成身份，不进匹配池', () => {
+  for (const v of ['群主', '管理员', '管理']) {
+    const r = 拆人名(v)
+    assert.ok(r.称谓, `${v} 该被认成身份`)
+    assert.deepEqual(r.词们, [], `${v} 不该留下用来匹配的碎片`)
+  }
+})
+
+test('拆人名：「群主龙娘」拆成身份 + 名字', () => {
+  const r = 拆人名('群主龙娘')
+  assert.equal(r.称谓, '群主')
+  assert.equal(r.名, '龙娘')
+  assert.deepEqual(r.词们, ['龙娘'])
+})
+
+test('拆人名：「管理人」是「管理 人」，不是「管理员 人」', () => {
+  const r = 拆人名('管理人')
+  assert.equal(r.名, '人')
+  assert.deepEqual(r.词们, [], '单字不该进匹配池')
+})
+
+test('认身份：只认整串，不认「群主人」这种', () => {
+  assert.equal(认身份('群主'), '群主')
+  assert.equal(认身份('群 主'), '群主')
+  assert.equal(认身份('admin'), '管理员')
+  assert.equal(认身份('群主人'), '')
+  assert.equal(认身份('小鱼儿'), '')
+})
+
+test('昵称对得上：改过名也能按碎片对上', () => {
+  // 实测群 730783833 里 p83 一天之内叫过：
+  const 曾用名 = ['GPT6Astra', '龙娘', '限时接入Claude', 'Claude（限时接入）', '魔丸']
+  const 词们 = 拆人名('龙娘').词们
+  assert.ok(曾用名.some((n) => 昵称对得上(n, 词们)), '用「龙娘」问该找得到')
+  assert.ok(!昵称对得上('小鱼儿', 词们), '不相干的人不该被算进来')
+})
+
+test('昵称对得上：空名不匹配任何人（不能变成「匹配全部」）', () => {
+  assert.equal(昵称对得上('', ['南瓜']), false)
+  assert.equal(昵称对得上('南瓜教主', []), false)
+})
+
+// ── 真的走一遍检索 ──────────────────────────────────────────────────
+
+/** 造一个「同一个号在不同日期改了名」的仓库 */
+function 造改过名的仓库 (t) {
+  const 根 = mkdtempSync(join(tmpdir(), 'mv-name-'))
+  t.after(() => rmSync(根, { recursive: true, force: true }))
+  const 群 = join(根, 'chat', 'group', '730783833')
+  mkdirSync(群, { recursive: true })
+  writeFileSync(join(群, '2026-11-03.txt'),
+    '[21:00:00] 南瓜教主(p18): 晚上好\n'
+    + '[23:50:00] 南瓜教主(p18): 帮我画一张图\n'
+    + '[23:59:12] 负债な九尾天狐(p18): 最后这句是我的\n'
+    + '[23:59:42] 龙娘(p83): 你别哭\n')
+  return 根
+}
+
+test('按时间查：用户用的名字和存档里的不一样也能找到', async (t) => {
+  const 根 = 造改过名的仓库(t)
+  // ① 用「天狐」问 —— 存档里就是这个名字
+  let r = await 跑检索({
+    args: { query: '', 来源: 'group:730783833', 止: '2026-11-03', 按时间: true, 人: '天狐', limit: 1 },
+    ...公共(根),
+  })
+  assert.ok(r.text.includes('最后这句是我的'), `用「天狐」该找得到，实际：${r.text}`)
+  // ② 用「南瓜」问 —— 同一个人前一天的旧名
+  r = await 跑检索({
+    args: { query: '', 来源: 'group:730783833', 止: '2026-11-03', 按时间: true, 人: '南瓜', limit: 1 },
+    ...公共(根),
+  })
+  assert.ok(r.text.includes('帮我画一张图'), `用「南瓜」该找得到，实际：${r.text}`)
+})
+
+test('按时间查：名字对不上时说清「对不上」，不是只说「没有内容」', async (t) => {
+  const 根 = 造改过名的仓库(t)
+  const r = await 跑检索({
+    args: { query: '', 来源: 'group:730783833', 止: '2026-11-03', 按时间: true, 人: '小鱼儿', limit: 1 },
+    ...公共(根),
+  })
+  assert.equal(r.命中数, 0)
+  assert.ok(!/^没有内容。$/.test(r.text))
+  assert.match(r.text, /没有一条是「小鱼儿」说的/, `该告诉用户人没对上：${r.text}`)
+  assert.match(r.text, /说过话的人/, '该列出当时谁说过话，方便用户换个名字再问')
+})
+
+test('按时间查：填「群主」时明确说清没有身份数据，而不是搜出一堆乱七八糟的', async (t) => {
+  const 根 = 造改过名的仓库(t)
+  const r = await 跑检索({
+    args: { query: '', 来源: 'group:730783833', 止: '2026-11-03', 按时间: true, 人: '群主', limit: 3 },
+    ...公共(根),
+  })
+  assert.equal(r.命中数, 0, '「群主」不是昵称，不该匹配到任何人')
+  assert.match(r.text, /没有存过「群主」这类身份/)
+})
+
+test('按时间查：来源只给 group 不限定群号，也该搜到', async (t) => {
+  // 实测风险：模型不知道群号，很可能只传 来源:'group'
+  const 根 = 造改过名的仓库(t)
+  const r = await 跑检索({
+    args: { query: '', 来源: 'group', 止: '2026-11-03', 按时间: true, limit: 2 },
+    ...公共(根),
+  })
+  assert.ok(r.text.includes('你别哭'), `只给 group 也该能查到群聊，实际：${r.text}`)
+})
+
+test('来源="*" 时按时间查要同时覆盖私聊和群聊', async (t) => {
+  const 根 = 造改过名的仓库(t)
+  mkdirSync(join(根, 'chat', 'private'), { recursive: true })
+  writeFileSync(join(根, 'chat', 'private', '2026-11-03.txt'), '[23:59:50] 小鱼儿(p1): 私聊最后一句\n')
+  const r = await 跑检索({
+    args: { query: '', 来源: '*', 起: '2026-11-03', 止: '2026-11-03', 按时间: true, limit: 1 },
+    ...公共(根),
+  })
+  assert.ok(r.text.includes('私聊最后一句'), `跨来源该取全局最新的那条，实际：${r.text}`)
+})
+
+// ── 只给人、不给 query、也不用 按时间 的情况 ────────────────────────
+// 模型完全可能这么问（「小鱼儿最后一句说了什么」只传 人）。
+// 这条路上以前有两处空集漏洞：聊天检索层没关键词直接返回空；
+// 日期参数没透传下去。
+
+test('只给「人」不给 query 也能找到人说的话（降级分支）', async (t) => {
+  const 根 = 造改过名的仓库(t)
+  const r = await 跑检索({
+    args: { 人: '天狐', 来源: 'group:730783833' },
+    ...公共(根),
+  })
+  assert.equal(r.命中数, 1, `该找到天狐说的那句，实际：${r.text}`)
+  assert.ok(r.text.includes('最后这句是我的'))
+})
+
+test('降级分支：改过名的碎片也对得上', async (t) => {
+  const 根 = 造改过名的仓库(t)
+  const r = await 跑检索({ args: { 人: '南瓜', 来源: 'group:730783833' }, ...公共(根) })
+  assert.ok(r.text.includes('帮我画一张图'), `用旧名该找得到，实际：${r.text}`)
+})
+
+test('降级分支：日期范围要真的生效', async (t) => {
+  const 根 = 造改过名的仓库(t)
+  const 前 = await 跑检索({
+    args: { 起: '2026-11-02', 止: '2026-11-02', 来源: 'group:730783833' },
+    ...公共(根),
+  })
+  assert.equal(前.命中数, 0, '11-02 没有聊天，不该返回 11-03 的内容')
+  assert.match(前.text, /2026-11-02/)
+})
+
+test('降级分支：人名对不上时说清原因', async (t) => {
+  const 根 = 造改过名的仓库(t)
+  const r = await 跑检索({ args: { 人: '小鱼儿', 来源: 'group:730783833' }, ...公共(根) })
+  assert.equal(r.命中数, 0)
+  assert.match(r.text, /没有昵称含「小鱼儿」的消息/)
+})
+
+test('降级分支：填「群主」时同样说清没有身份数据', async (t) => {
+  const 根 = 造改过名的仓库(t)
+  const r = await 跑检索({ args: { 人: '群主', 来源: 'group:730783833' }, ...公共(根) })
+  assert.equal(r.命中数, 0)
+  assert.match(r.text, /没有存过「群主」这类身份/)
+})
+
+test('只给人：那人说话在很早的位置也翻得到（不能只读最新几行）', async (t) => {
+  // 实测踩过（云端真数据）：南瓜鸡 11-03 的话在文件第 972 行，
+  // 「只读最新 N 行」时一条都读不到，结果是「查无此人」。
+  const 根 = mkdtempSync(join(tmpdir(), 'mv-page-'))
+  t.after(() => rmSync(根, { recursive: true, force: true }))
+  const 群 = join(根, 'chat', 'group', '730783833')
+  mkdirSync(群, { recursive: true })
+  let 长 = ''
+  for (let i = 0; i < 900; i++) 长 += `[1${i % 10}:00:00] 别人(p99): 刷屏${i}\n`
+  长 += '[23:59:12] 南瓜鸡(p18): 我最后一句\n'
+  writeFileSync(join(群, '2026-11-03.txt'), 长)
+
+  const r = await 跑检索({ args: { 人: '南瓜', 来源: 'group' }, ...公共(根) })
+  assert.ok(r.text.includes('我最后一句'), `900 行之外的那句也该翻到，实际：${r.text}`)
+})
