@@ -76,7 +76,27 @@
 
 ## 安装
 
-**一条命令（推荐）**：包自带的 `install.sh` 会按 DSH 官方流程装好并自检。
+**一条命令（Windows / macOS / Linux 通用）**：包自带的安装器按 DSH 官方流程装好并自检。
+
+```bash
+git clone https://github.com/guoke-liu/dsh-memory-vault.git && cd dsh-memory-vault
+node install.mjs            # 自动找唯一的 profile；多个就指定：node install.mjs 我的profile
+node install.mjs --dry      # 只看要做什么，不落盘
+```
+
+`install.sh` 是同一个东西的壳（需要 bash）；**Windows 上直接 `node install.mjs`**。
+
+**首次安装最常见的三个问题：**
+
+| 现象 | 真实情况 |
+|---|---|
+| 装完提示你重启，重启后**当前会话断了**、显示「任务已停止」 | 预期行为。DSH 重启会换 token、旧会话结束。**让人手动重启**，别让 agent 在同一轮里「重启 + 等结果」——它等的那个进程就是被重启的 |
+| 要不要先建库目录 | **不用**，第一次写入时自动建 |
+| 装完设置页没有「记忆仓库」 | 九成是没重启，或 `dsh.profile.bundles` 没加上。跑 `node install.mjs --dry` 对照计划，再 `dsh --profile <名字> --dump-config` 搜包名，应该恰好 1 条 |
+
+---
+
+**老办法（手动）**：`install.sh` 会按 DSH 官方流程装好并自检。
 
 ```bash
 git clone https://github.com/guoke-liu/dsh-memory-vault.git && cd dsh-memory-vault

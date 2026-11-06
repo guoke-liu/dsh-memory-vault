@@ -1,3 +1,25 @@
+## v1.6.2 — 2026-11-06
+
+**安装器改成跨平台**：`install.sh` 换成薄壳，真正干活的是新的 `install.mjs`（Node 写，三系统通用）。
+
+### 为什么
+
+`install.sh` 是纯 bash，Windows 用户得先装 Git Bash / WSL 才能跑 —— 而机器上既然有 DSH，
+就一定有 Node ≥ 22。首次安装最烦的就是「还没装插件，先得装个 bash 环境」。
+
+现在：`node install.mjs`（Windows / macOS / Linux 一样），`install.sh` 只负责转调，老习惯不受影响。
+
+### 顺带写进 README 的三条首次安装说明
+
+1. **重启会中断当前会话** 是预期行为，不是装坏了；让人手动重启，别让 agent 在同一轮里「重启 + 等结果」
+2. **库目录不用手动建**，第一次写入时自动建
+3. 设置页看不到「记忆仓库」时怎么查：`--dry` 对照计划 + `--dump-config` 搜包名应恰好 1 条
+
+### 测试
+
+在临时 profile（`DSH_HOME=/tmp/...`）里实跑过：装完 `注册条目数 1 / skipping 0`，
+`dsh.profile.bundles` 里有 `dsh-memory-vault`。476 条单测不受影响（这次只动安装器和文档）。
+
 ## v1.6.1 — 2026-11-06
 
 **加了安装脚本 `install.sh`**，不再需要照着 README 手敲 `pnpm add` + 手改 `bundles`。
