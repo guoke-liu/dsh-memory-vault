@@ -76,15 +76,26 @@
 
 ## 安装
 
+**一条命令（推荐）**：包自带的 `install.sh` 会按 DSH 官方流程装好并自检。
+
 ```bash
-# 1. 装依赖
+git clone https://github.com/guoke-liu/dsh-memory-vault.git && cd dsh-memory-vault
+./install.sh              # 自动找唯一的 profile；多个时指定：./install.sh myprofile
+./install.sh --dry        # 只看要做什么，不落盘
+```
+
+它做三件事：加 `link:` 依赖 → 把包名写进 `dsh.profile.bundles` → 跑 `dsh plugin install`，
+最后用 `--dump-config` 验收「注册条目 = 1、`skipping` = 0」。**不要手写 `cordis.patch.yml`
+的插件条目** —— 本包自带 `dsh.bundle.patch`，手加会重复注册。
+
+⚠️ 两个前提：Node **>= 22**；profile 里 `pnpm` 可用（没有的话脚本会自动用 `corepack` 顶替）。
+
+**手动装**（想自己控制时）：
+
+```bash
 cd ~/.dsh/profiles/<你的profile>
 pnpm add /path/to/dsh-memory-vault
-
-# 2. 把这个包名加进 package.json 的 dsh.profile.bundles 数组
-#    "dsh-memory-vault"
-
-# 3. 重启
+# 再把 "dsh-memory-vault" 加进 package.json 的 dsh.profile.bundles 数组
 dsh --profile <你的profile>
 ```
 

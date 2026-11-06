@@ -1,3 +1,31 @@
+## v1.6.1 — 2026-11-06
+
+**加了安装脚本 `install.sh`**，不再需要照着 README 手敲 `pnpm add` + 手改 `bundles`。
+
+### 为什么
+
+README 原来的装法要三步手工：进 profile 目录、`pnpm add` 本地路径、再手写
+`dsh.profile.bundles`。只要漏掉第三步，插件装上了但**根本不会被加载**，日志还看不出毛病。
+`install.sh` 把这三步连起来做，并且**装完自检**：
+
+- 先看 Node >= 22（本包 `engines`）
+- 自动找 profile（只有一个就直接用，多个会列出来让你指定）
+- 加 `link:` 依赖 → 写 `dsh.profile.bundles` → 跑 `dsh plugin install`
+- 用 `--dump-config` 验收「`- id: dsh-memory-vault` 恰好 1 条、`skipping` = 0」，不过就报错并给出回滚命令
+- 没有 `pnpm` 时用 `corepack pnpm` 临时顶替，装完撤掉
+
+`--dry` 只打印计划。装完它会提醒你填 `onebotUrl` / `ownerQq` / `群号` ——
+不填也能启动，只是不会去拉聊天（这个坑 README 里写过）。
+
+### 其它
+
+`package.json` 的 `files` 里补了 `install.sh`，`npm i <tgz>` 装下来的包里也带着它。
+
+### 测试
+
+476 条照旧全绿（这次只加脚本和文档，没动 `lib/`）。脚本本身在临时 profile 里实跑过：
+装完 `注册条目数 1 / skipping 0`。
+
 # 更新日志
 
 ## v1.6.0 — 2026-11-04
